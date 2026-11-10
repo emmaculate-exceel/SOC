@@ -1,0 +1,50 @@
+# Local IDS practice lab: one deliberately vulnerable target, one "attacker",
+# and two sensors (Suricata + Zeek) that watch the target's traffic.
+#
+# IMPORTANT: no "ports:" are published on purpose. DVWA is intentionally
+# vulnerable, so it must stay inside the private Docker network only.
+#
+# Image names/tags change over time. If a pull fails, search Docker Hub for the
+# current name and update the "image:" line.
+
+services:
+  victim:
+    image: vulnerables/web-dvwa        # intentionally vulnerable web app
+    container_name: victim
+    networks: [labnet]
+    ports:
+      - "8080:80"
+    mem_limit: 512m
+
+  attacker:
+    image: alpine:latest               # install tools inside it: apk add nmap curl
+    container_name: attacker
+    command: sleep infinity
+    networks: [labnet]
+    mem_limit: 256m
+
+  suricata:
+    image: jasonish/suricata:latest    # community-maintained Suricata image
+    container_name: suricata
+    network_mode: "service:victim"     # share the victim's network, so it sees all its traffic
+    cap_add: [NET_ADMIN, NET_RAW, SYS_NICE]
+    # -S loads ONLY your own rules file. Remove "-S ..." later to use full rule sets.
+    command: -i eth0 -S /etc/suricata/rules/local.rules
+    volumes:
+      - ./local.rules:/etc/suricata/rules/local.rules
+      - ./logs/suricata:/var/log/suricata
+    mem_limit: 768m
+
+  zeek:
+    image: zeek/zeek:latest            # official Zeek image
+    container_name: zeek
+    network_mode: "service:victim"
+    cap_add: [NET_ADMIN, NET_RAW]
+    working_dir: /logs                 # Zeek writes its .log files here
+    command: zeek -i eth0 local
+    volumes:
+      - ./logs/zeek:/logs
+    mem_limit: 512m
+
+networks:
+  labnet:
